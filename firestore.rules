@@ -1,0 +1,204 @@
+rules_version = '2';
+
+// =====================================================================
+//  CampusFix – Cloud Firestore Security Rules (3-role RBAC)
+//
+//  Roles live in users/{uid}.role : "student" | "staff" | "admin"
+//
+//    student : self-registration only            (rules force role == "student")
+//    staff   : created/promoted by an ADMIN       (rules check the caller is admin)
+//    admin   : set only in the Firebase Console   (no client can ever grant it)
+//
+//  These rules run on Google's servers. A modified app cannot bypass them.
+//  Paste into: Firebase Console → Firestore Database → Rules → Publish
+// =====================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helper functions ----------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    // Profile of the caller (only call after checking it exists).
+    function me() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    // Signed in, has a profile, is NOT deactivated, and has this role.
+    // Profiles created before `isActive` existed count as active.
+    function hasActiveRole(role) {
+      return isSignedIn()
+        && exists(userPath(request.auth.uid))
+        && me().role == role
+        && me().get('isActive', true) == true;
+    }
+
+    function isStudent() { return hasActiveRole('student'); }
+    function isStaff()   { return hasActiveRole('staff'); }
+    function isAdmin()   { return hasActiveRole('admin'); }
+
+    // Is `uid` an active maintenance staff member? (used for assignment)
+    function isActiveStaffUser(uid) {
+      return exists(userPath(uid))
+        && get(userPath(uid)).data.role == 'staff'
+        && get(userPath(uid)).data.get('isActive', true) == true;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function validProfileFields() {
+      return request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.studentId is string
+        && request.resource.data.get('isActive', true) is bool;
+    }
+
+    // =================================================================
+    //  users/{userId}
+    // =================================================================
+    match /users/{userId} {
+
+      // Your own profile; admins can read (and list) everyone.
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['name', 'email', 'studentId', 'role', 'isActive', 'createdAt'])
+        && request.resource.data.keys().hasAll(['name', 'email', 'studentId', 'role'])
+        && validProfileFields()
+        && (
+             // (a) Student self-registration: only for yourself, ONLY as student, active.
+             (request.auth.uid == userId
+               && request.resource.data.role == 'student'
+               && request.resource.data.get('isActive', true) == true
+               && request.resource.data.email == request.auth.token.email.lower())
+             ||
+             // (b) Trusted provisioning: an ADMIN creates a STAFF profile for someone else.
+             (isAdmin()
+               && request.auth.uid != userId
+               && request.resource.data.role == 'staff')
+           );
+
+      // (a) Anyone may edit their own name / ID. Role, email, isActive are locked.
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && changedKeys().hasOnly(['name', 'studentId'])
+        && validProfileFields();
+
+      // (b) Admin manages OTHER non-admin accounts: role student <-> staff, active flag.
+      //     Nobody can grant or remove admin from the app.
+      allow update: if isAdmin()
+        && request.auth.uid != userId
+        && resource.data.role != 'admin'
+        && changedKeys().hasOnly(['role', 'isActive'])
+        && request.resource.data.role in ['student', 'staff']
+        && request.resource.data.get('isActive', true) is bool;
+
+      allow delete: if false;
+    }
+
+    // =================================================================
+    //  issues/{issueId}
+    // =================================================================
+    match /issues/{issueId} {
+
+      // Every signed-in user can see all complaints (public statuses).
+      allow read: if isSignedIn();
+
+      // Students report complaints (admins may too, for the demo seed tool).
+      // A new complaint must use the default values and contain NO assignment fields.
+      allow create: if (isStudent() || isAdmin())
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             'title', 'description', 'category', 'building', 'location', 'priority',
+             'imageURL', 'reportedBy', 'reporterName', 'reportedAt', 'upvoteCount',
+             'status', 'adminRemarks', 'resolutionNotes'])
+        && request.resource.data.keys().hasAll([
+             'title', 'description', 'category', 'building', 'location', 'priority',
+             'reportedBy', 'reporterName', 'reportedAt', 'upvoteCount',
+             'status', 'adminRemarks', 'resolutionNotes'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 10
+        && request.resource.data.priority in ['Low', 'Medium', 'High', 'Critical']
+        // Photo (optional): must be a public ImgBB image URL, nothing else.
+        && (!('imageURL' in request.resource.data)
+            || (request.resource.data.imageURL is string
+                && request.resource.data.imageURL.size() <= 500
+                && request.resource.data.imageURL.matches('https://i[.]ibb[.]co/.+')))
+        && request.resource.data.status == 'Pending'
+        && request.resource.data.upvoteCount == 0
+        && request.resource.data.adminRemarks == ''
+        && request.resource.data.resolutionNotes == ''
+        && request.resource.data.reportedAt == request.time;
+
+      // RULE A – ADMIN: status, priority, remarks, resolution, assignment.
+      // If a staff member is (re)assigned, they must be ACTIVE STAFF.
+      allow update: if isAdmin()
+        && changedKeys().hasOnly([
+             'status', 'priority', 'adminRemarks', 'resolutionNotes', 'updatedAt',
+             'assignedTo', 'assignedToName', 'assignedAt', 'acceptedAt', 'workDescription'])
+        && request.resource.data.status in ['Pending', 'In Progress', 'Resolved']
+        && request.resource.data.priority in ['Low', 'Medium', 'High', 'Critical']
+        && request.resource.data.updatedAt == request.time
+        && (!('assignedTo' in changedKeys())
+            || request.resource.data.get('assignedTo', null) == null
+            || isActiveStaffUser(request.resource.data.assignedTo));
+
+      // RULE B – MAINTENANCE STAFF: only on complaints assigned to THEM.
+      //  * may set acceptedAt once (accept the task)
+      //  * may change status only to In Progress / Resolved, and only after accepting
+      //  * Resolved requires resolution notes
+      //  * cannot touch priority, assignment, remarks, reporter, votes...
+      allow update: if isStaff()
+        && resource.data.get('assignedTo', null) == request.auth.uid
+        && changedKeys().hasOnly(['status', 'workDescription', 'resolutionNotes', 'acceptedAt', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && (!('acceptedAt' in changedKeys())
+            || (resource.data.get('acceptedAt', null) == null
+                && request.resource.data.acceptedAt == request.time))
+        && request.resource.data.get('acceptedAt', null) != null
+        && (!('status' in changedKeys())
+            || request.resource.data.status in ['In Progress', 'Resolved'])
+        && (request.resource.data.status != 'Resolved'
+            || request.resource.data.resolutionNotes.size() > 0)
+        && request.resource.data.get('workDescription', '') is string;
+
+      // RULE C – STUDENT UPVOTE: exactly +1, only if they did not vote before,
+      // and their vote document is created in the same transaction.
+      allow update: if isStudent()
+        && changedKeys().hasOnly(['upvoteCount'])
+        && request.resource.data.upvoteCount == resource.data.upvoteCount + 1
+        && !exists(/databases/$(database)/documents/issues/$(issueId)/votes/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/issues/$(issueId)/votes/$(request.auth.uid));
+
+      allow delete: if isAdmin();
+
+      // ---------- issues/{issueId}/votes/{voteUserId} ----------
+      match /votes/{voteUserId} {
+        allow read: if isSignedIn() && (request.auth.uid == voteUserId || isAdmin());
+
+        // Document ID must be YOUR uid -> at most one vote per student.
+        allow create: if isStudent()
+          && request.auth.uid == voteUserId
+          && request.resource.data.keys().hasOnly(['userId', 'votedAt'])
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.votedAt == request.time
+          && getAfter(/databases/$(database)/documents/issues/$(issueId)).data.upvoteCount
+             == get(/databases/$(database)/documents/issues/$(issueId)).data.upvoteCount + 1;
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}
