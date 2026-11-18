@@ -1,0 +1,42 @@
+[
+  {
+    "title": "Ceiling fan not working in Room 304",
+    "description": "The ceiling fan in Room 304 does not turn on even though the switch works. The room gets very hot during afternoon classes.",
+    "category": "Electrical",
+    "building": "Academic Building",
+    "location": "Room 304, 3rd floor",
+    "priority": "High"
+  },
+  {
+    "title": "Broken chairs in the reading room",
+    "description": "Three chairs near the window in the main reading room have broken legs and are unsafe to sit on.",
+    "category": "Furniture",
+    "building": "Library",
+    "location": "Main reading room, ground floor",
+    "priority": "Medium"
+  },
+  {
+    "title": "Projector shows no signal",
+    "description": "The projector in Lab 2 shows 'No Signal' with every laptop and HDMI cable we tried. Lab classes are affected.",
+    "category": "Projector",
+    "building": "Science Laboratory Complex",
+    "location": "Computer Lab 2",
+    "priority": "Critical"
+  },
+  {
+    "title": "No water in 2nd floor washroom",
+    "description": "The taps in the 2nd floor male washroom have had no water supply since yesterday morning.",
+    "category": "Water Supply",
+    "building": "Student Hall",
+    "location": "2nd floor washroom, east wing",
+    "priority": "High"
+  },
+  {
+    "title": "Wi-Fi keeps disconnecting in cafeteria",
+    "description": "The campus Wi-Fi disconnects every few minutes in the cafeteria seating area, making it hard to study between classes.",
+    "category": "Internet",
+    "building": "Central Cafeteria",
+    "location": "Seating area near the counter",
+    "priority": "Low"
+  }
+]
