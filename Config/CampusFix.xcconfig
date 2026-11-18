@@ -1,0 +1,20 @@
+//
+//  CampusFix.xcconfig
+//  CampusFix
+//
+//  Build settings for the CampusFix target.
+//
+//  Secrets are NOT written here. They are loaded from the git-ignored
+//  ../.env file. A .env line such as
+//
+//      IMGBB_API_KEY=abc123
+//
+//  is also valid .xcconfig syntax, so Xcode can include it directly.
+//  The key then reaches the app through Config/Info.plist
+//  (ImgBBAPIKey = $(IMGBB_API_KEY)).
+//
+//  "#include?" means: include the file if it exists, otherwise keep building.
+//  Without a .env file the app still builds, but photo upload shows an error.
+//
+
+#include? "../.env"

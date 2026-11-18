@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Extra Info.plist keys for CampusFix. Xcode merges this file with the
+  automatically generated Info.plist (GENERATE_INFOPLIST_FILE = YES).
+
+  $(IMGBB_API_KEY) is replaced at build time with the value from the
+  git-ignored .env file (see Config/CampusFix.xcconfig).
+-->
+<plist version="1.0">
+<dict>
+	<key>ImgBBAPIKey</key>
+	<string>$(IMGBB_API_KEY)</string>
+</dict>
+</plist>
